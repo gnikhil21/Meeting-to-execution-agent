@@ -76,7 +76,6 @@ def ingest_meeting(payload: MeetingIngestRequest, db: Session = Depends(get_db))
     conflicted_action_indices = set()
     seen_conflict_targets = set()
 
-    # Build list of items to evaluate
     all_incoming_items = []
     for d in extracted.decisions:
         all_incoming_items.append({
@@ -120,11 +119,9 @@ def ingest_meeting(payload: MeetingIngestRequest, db: Session = Depends(get_db))
 
                 target_key = affected_tracker_id or (f"TASK_ID_{affected_task_id}" if affected_task_id else match["id"])
 
-                # Mark this action item as conflicted so it is NOT added as a new task in the queue
                 if item["act_idx"] is not None:
                     conflicted_action_indices.add(item["act_idx"])
 
-                # Prevent duplicate conflict records for the same ticket
                 if target_key in seen_conflict_targets:
                     continue
 
@@ -154,7 +151,6 @@ def ingest_meeting(payload: MeetingIngestRequest, db: Session = Depends(get_db))
 
     # 2. STAGE ACTION ITEMS: Only new or non-conflicted items enter the confirmation queue
     for idx, act in enumerate(extracted.action_items):
-        # If this item was flagged as a conflict/update to an existing ticket, DO NOT add as a new task
         if idx in conflicted_action_indices:
             continue
 
@@ -168,7 +164,6 @@ def ingest_meeting(payload: MeetingIngestRequest, db: Session = Depends(get_db))
             except Exception:
                 pass
 
-        # Check for semantic matches that represent reassignments or date changes (Updates)
         existing_matches = vector_db.search(query_text=clean_header, top_k=3, min_score=0.55)
         existing_matched = None
         for m in existing_matches:
@@ -275,7 +270,6 @@ def get_review_queue(db: Session = Depends(get_db)):
             elif not current_ticket_id:
                 current_ticket_id = f"TASK-{live_task.id}"
 
-        # Deduplicate conflict cards in UI
         card_key = current_ticket_id or c.id
         if card_key in seen_card_keys:
             continue
@@ -391,8 +385,10 @@ def resolve_conflict(conflict_id: int, update_ticket: bool = True, payload: Opti
         raise HTTPException(status_code=404, detail="Conflict not found")
 
     res_notes = "Superseded by team decision"
+    custom_title = None
     if payload and isinstance(payload, dict):
         res_notes = payload.get("notes", res_notes)
+        custom_title = payload.get("updated_title")
 
     conflict.resolved = True
     conflict.resolution_notes = res_notes
@@ -405,29 +401,31 @@ def resolve_conflict(conflict_id: int, update_ticket: bool = True, payload: Opti
             target_task = db.query(ActionItem).filter(ActionItem.tracker_task_id == conflict.affected_tracker_task_id).first()
 
         if target_task:
-            # Resolve full updated title from the latest statement
-            latest_title = None
-            if hasattr(conflict, 'new_direction_text') and conflict.new_direction_text:
-                latest_title = clean_task_title(conflict.new_direction_text)
-            
-            if not latest_title and conflict.proposed_decision_id:
-                new_dec = db.query(Decision).filter(Decision.id == conflict.proposed_decision_id).first()
-                if new_dec and new_dec.description:
-                    latest_title = clean_task_title(new_dec.description)
+            if custom_title and custom_title.strip():
+                user_clean = custom_title.strip()
+                updated_title = f"[UPDATED] {user_clean}" if not user_clean.startswith("[UPDATED]") else user_clean
+            else:
+                latest_title = None
+                if hasattr(conflict, 'new_direction_text') and conflict.new_direction_text:
+                    latest_title = clean_task_title(conflict.new_direction_text)
+                
+                if not latest_title and conflict.proposed_decision_id:
+                    new_dec = db.query(Decision).filter(Decision.id == conflict.proposed_decision_id).first()
+                    if new_dec and new_dec.description:
+                        latest_title = clean_task_title(new_dec.description)
 
-            # If latest_title is just a single word (e.g. 'Azure'), adapt the base title rather than truncating
-            if latest_title and len(latest_title.split()) <= 2:
-                base = re.sub(r'\[UPDATED\]\s*', '', target_task.title)
-                if "aws" in base.lower() and "azure" in latest_title.lower():
-                    latest_title = re.sub(r'aws', 'Azure', base, flags=re.IGNORECASE)
-                elif "postgres" in base.lower() and "mongo" in latest_title.lower():
-                    latest_title = re.sub(r'postgres(?:ql)?', 'MongoDB', base, flags=re.IGNORECASE)
-                else:
-                    latest_title = f"{base} (Redirected to {latest_title})"
-            elif not latest_title:
-                latest_title = f"Updated: {target_task.title}"
+                if latest_title and len(latest_title.split()) <= 2:
+                    base = re.sub(r'\[UPDATED\]\s*', '', target_task.title)
+                    if "aws" in base.lower() and "azure" in latest_title.lower():
+                        latest_title = re.sub(r'aws', 'Azure', base, flags=re.IGNORECASE)
+                    elif "postgres" in base.lower() and "mongo" in latest_title.lower():
+                        latest_title = re.sub(r'postgres(?:ql)?', 'MongoDB', base, flags=re.IGNORECASE)
+                    else:
+                        latest_title = f"{base} (Redirected to {latest_title})"
+                elif not latest_title:
+                    latest_title = f"Updated: {target_task.title}"
 
-            updated_title = f"[UPDATED] {latest_title}" if not latest_title.startswith("[UPDATED]") else latest_title
+                updated_title = f"[UPDATED] {latest_title}" if not latest_title.startswith("[UPDATED]") else latest_title
 
             target_task.title = updated_title
             target_task.description = f"Updated following conflict resolution: {res_notes}"
@@ -471,6 +469,18 @@ def resolve_conflict(conflict_id: int, update_ticket: bool = True, payload: Opti
 
     db.commit()
     return {"status": "RESOLVED", "conflict_id": conflict_id, "updated_ticket": conflict.affected_tracker_task_id}
+
+@app.post("/api/review/conflicts/{conflict_id}/discard")
+def discard_conflict_endpoint(conflict_id: int, db: Session = Depends(get_db)):
+    """Dismisses/discards an open conflict without altering the underlying ticket."""
+    conflict = db.query(ConflictLog).filter(ConflictLog.id == conflict_id).first()
+    if not conflict:
+        raise HTTPException(status_code=404, detail="Conflict not found")
+
+    conflict.resolved = True
+    conflict.resolution_notes = "Discarded by user"
+    db.commit()
+    return {"status": "DISCARDED", "conflict_id": conflict_id}
 
 @app.post("/api/tracker/tickets/{ticket_id}/close")
 def close_ticket_endpoint(ticket_id: str, db: Session = Depends(get_db)):

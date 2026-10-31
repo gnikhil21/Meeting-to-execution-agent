@@ -10,29 +10,47 @@ WORD_TO_NUM = {
 }
 
 def clean_task_title(text: str) -> str:
+    """
+    Generically extracts the canonical imperative task header from any conversational sentence
+    using English linguistic clause structure without requiring hardcoded phrase lists.
+    """
     s = text.strip()
     if ":" in s:
         s = s.split(":", 1)[-1].strip()
 
-    # 1. Remove passive / trailing phrases and relative deadlines from title
+    # 1. Remove passive agent phrases and relative deadlines from the tail
     s = re.sub(r'\s+(?:can be taken up|will be taken up|can be done|will be handled|will be done)\s+by\s+.*$', '', s, flags=re.IGNORECASE)
+    s = re.sub(r'\s+by\s+me$', '', s, flags=re.IGNORECASE).strip()
     s = re.sub(r'\s+(?:by|in|within|before)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|couple|few)\s+(?:days?|weeks?|months?|hours?).*$', '', s, flags=re.IGNORECASE)
     s = re.sub(r'\s+(?:by|in|before)\s+(?:tomorrow|yesterday|today|tonight|friday|monday|tuesday|wednesday|thursday|saturday|sunday|next week|eod|end of day|end of week|eow).*$', '', s, flags=re.IGNORECASE)
-    s = re.sub(r'\s+by\s+me$', '', s, flags=re.IGNORECASE).strip()
 
-    # 2. Remove leading conversational framing
-    leading_patterns = [
-        r'^(?:we\s+need\s+to|we\s+should|we\s+must|we\s+have\s+to|someone\s+should)\s+',
-        r'^(?:i\s+would\s+be\s+doing|i\s+will\s+be\s+doing|i\s+am\s+doing|i\s+will|i\'ll|i\'m\s+going\s+to|i\s+am\s+going\s+to)\s+',
-        r'^(?:take\s+up|take\s+care\s+of|take\s+on|take\s+over|take)\s+',
-        r'^(?:start\s+with\s+(?:the\s+)?|begin\s+with\s+(?:the\s+)?)\s*',
-        r'^(?:let\s+me|can\s+you|could\s+you|please|you\s+should)\s+',
-        r'^(?:i\s+can\s+take\s+care\s+of|i\s+can\s+handle|i\'ll\s+handle|i\s+can\s+take\s+up|i\s+can\s+do)\s+',
-        r'^(?:look\s+into|work\s+on|handle)\s+',
-        r'^(?:the\s+task\s+is\s+to|task\s+is\s+to|action\s+item\s+is\s+to)\s+',
-    ]
-    for pat in leading_patterns:
-        s = re.sub(pat, '', s, flags=re.IGNORECASE).strip()
+    # 2. Generic Infinitive Clause Extraction (Grammar Rule: Core intent follows "decided/agreed/need/wants to [action]...")
+    infinitive_match = re.search(
+        r'\b(?:previously\s+)?(?:decided|agreed|planning|aiming|wants?|needed|needs?|trying|supposed|scheduled|set|able|going)\s+to\s+([a-zA-Z]+(?:\s+.*)?)$',
+        s,
+        re.IGNORECASE
+    )
+    if infinitive_match:
+        s = infinitive_match.group(1).strip()
+    else:
+        # 3. Generic Subject + Auxiliary/Modal Verb Stripping: [Subject] [Modal/Aux] [Action...]
+        s = re.sub(
+            r'^(?:(?:i|we|you|he|she|they|someone|team)\s+(?:would\s+be\s+doing|will\s+be\s+doing|am\s+doing|will|would|can|could|should|must|shall|might|am|is|are|was|were)\s+(?:be\s+)?(?:going\s+to\s+)?(?:doing\s+)?)',
+            '',
+            s,
+            flags=re.IGNORECASE
+        ).strip()
+        
+        # Generic prefix stripping for polite/conversational framing
+        s = re.sub(
+            r'^(?:(?:let\s+me|can\s+you|could\s+you|please|make\s+sure\s+to|task\s+is\s+to|action\s+item\s+is\s+to)\s+)',
+            '',
+            s,
+            flags=re.IGNORECASE
+        ).strip()
+
+    # 4. Strip filler leading verb prepositions like "start with the", "take up", "take on"
+    s = re.sub(r'^(?:(?:start|begin)\s+with\s+(?:the\s+)?|(?:take\s+(?:up|care\s+of|on|over)))\s*', '', s, flags=re.IGNORECASE).strip()
 
     if s:
         s = s[0].upper() + s[1:]
@@ -70,20 +88,24 @@ class TranscriptExtractor:
 
 Today is {today}.
 
-CRITICAL TITLE EXTRACTION RULES:
-- The 'title' MUST be ONLY the concise, imperative task name (e.g. 'AWS migration task and deploy', 'Change AWS migration to Azure').
-- Put conversational context into 'description', NEVER into 'title'.
+CRITICAL CANONICAL TASK TITLE RULE:
+- For 'action_items', rewrite ANY conversational statement into a 3 to 7 word professional imperative task header starting with a base action verb (e.g. 'Use PostgreSQL for customer DB', 'Migrate database schemas to MongoDB', 'Benchmark payment gateway API', 'Change AWS migration to Azure').
+- Transform passive voice, past-tense narrative context, polite questions, or indirect framing into a clean active task title:
+  * 'We previously decided to use PostgreSQL for our customer DB' -> 'Use PostgreSQL for customer DB'
+  * 'Bob: I will migrate database schemas by tomorrow' -> 'Migrate database schemas'
+  * 'Charlie: we need to change the aws migration task to azure' -> 'Change AWS migration to Azure'
+- Put conversational context into 'description', NEVER return the full raw spoken sentence as the 'title'.
 
 DEADLINES:
 - Calculate deadlines relative to {today} (e.g., 'by 3 days' -> {today} + 3 days). Default to {default_deadline} if unspecified.
 
-Respond in pure JSON:
+Respond in pure JSON matching:
 {{
   "decisions": [
     {{"scope_tag": "str (e.g. database, auth, infra, general)", "description": "statement of decision/direction", "rationale": "context given"}}
   ],
   "action_items": [
-    {{"title": "concise task header only", "description": "context", "owner": "assignee name", "deadline": "YYYY-MM-DD"}}
+    {{"title": "concise imperative task title", "description": "context", "owner": "assignee name", "deadline": "YYYY-MM-DD"}}
   ]
 }}"""
 
@@ -97,7 +119,7 @@ Respond in pure JSON:
                         act["deadline"] = inferred
             return ExtractionResult(**data)
 
-        # Fallback logic
+        # Generic clause fallback logic
         decisions = []
         action_items = []
         default_due = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")

@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <title>Meeting-to-Execution Agent (v3.0 Conflict Sync & Task Updates)</title>
+    <title>Meeting-to-Execution Agent</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 
@@ -13,14 +13,7 @@
         <!-- Header -->
         <div class="flex justify-between items-center border-b pb-4">
             <div>
-                <div class="flex items-center gap-2">
-                    <h1 class="text-3xl font-extrabold text-indigo-700">Meeting-to-Execution Agent</h1>
-                    <span
-                        class="bg-indigo-100 text-indigo-800 text-xs px-2.5 py-0.5 rounded font-bold uppercase tracking-wide">v3.0
-                        Conflict Tracker Sync</span>
-                </div>
-                <p class="text-sm text-slate-500 mt-1">Cross-meeting memory, conflict sync & task update intelligence
-                    with <b>Google Gemini</b></p>
+                <h1 class="text-3xl font-extrabold text-indigo-700">Meeting-to-Execution Agent</h1>
             </div>
             <div class="space-x-2">
                 <button onclick="triggerReminders()"
@@ -32,16 +25,15 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <!-- 1. Transcript Ingest -->
-            <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+        <div id="topGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Ingest Transcript -->
+            <div id="ingestCard" class="bg-white p-5 rounded-lg shadow-sm border border-slate-200 md:col-span-2">
                 <div class="flex justify-between items-center mb-2">
-                    <h2 class="font-bold text-slate-800 text-base">1. Ingest Meeting Transcript</h2>
-                    <span class="text-[11px] text-indigo-600 font-medium">Clean Headers • Anti-Duplicate</span>
+                    <h2 class="font-bold text-slate-800 text-base">Ingest Meeting Transcript</h2>
                 </div>
-                <input id="title" class="w-full border p-2 rounded mb-2 text-sm font-medium"
-                    value="Sprint Architecture Alignment">
-                <textarea id="text" rows="8" class="w-full border p-2 rounded text-xs font-mono">Alice: We previously decided to use PostgreSQL for our customer DB.
+                <input id="title" type="hidden" value="Meeting Transcript">
+                <textarea id="text" rows="8" class="w-full border p-2 rounded text-xs font-mono"
+                    placeholder="Enter transcript lines here...">Alice: We previously decided to use PostgreSQL for our customer DB.
 Bob: Actually, today we decided to switch from PostgreSQL to MongoDB.
 Alice: Sounds good.
 Bob: I would be doing database schema migration to Mongo by tomorrow.
@@ -52,22 +44,20 @@ Charlie: Payment Gateway API benchmark can be taken up by me by tomorrow.</texta
                 </button>
             </div>
 
-            <!-- 2. Conflicts Box -->
-            <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+            <!-- Memory Conflicts (Dynamic: hidden when no open conflicts) -->
+            <div id="conflictsCard" class="bg-white p-5 rounded-lg shadow-sm border border-red-200 hidden">
                 <h2 class="font-bold text-red-600 mb-2 flex items-center gap-1.5 text-base">
-                    <span>⚠️ Cross-Meeting Memory Conflicts</span>
+                    <span>⚠️ Memory Conflicts</span>
                 </h2>
-                <div id="conflicts" class="space-y-2.5 text-xs overflow-y-auto max-h-[230px]">
-                    <p class="text-slate-400 italic">No open conflicts detected.</p>
-                </div>
+                <div id="conflicts" class="space-y-2.5 text-xs overflow-y-auto max-h-[230px]"></div>
             </div>
         </div>
 
-        <!-- 3. Staging Confirmation Queue -->
+        <!-- Confirmation Queue -->
         <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
             <div class="flex justify-between items-center mb-3">
                 <div>
-                    <h2 class="font-bold text-slate-800 text-base">2. Confirmation Queue (Human-in-the-Loop)</h2>
+                    <h2 class="font-bold text-slate-800 text-base">Confirmation Queue</h2>
                     <p class="text-xs text-slate-500">Notice clean task headers. Re-assignments or rescheduled dates
                         stage as <b>Updates</b> to existing tickets.</p>
                 </div>
@@ -79,12 +69,12 @@ Charlie: Payment Gateway API benchmark can be taken up by me by tomorrow.</texta
             </div>
         </div>
 
-        <!-- 4. Active Issue Tracker -->
+        <!-- Active Issue Tracker -->
         <div class="bg-white p-5 rounded-lg shadow-sm border-2 border-emerald-500">
             <div class="flex justify-between items-center mb-3">
                 <div>
                     <h2 class="font-bold text-emerald-800 text-base flex items-center gap-1.5">
-                        <span>🎯 3. Active Issue Tracker (Live Synced Tickets)</span>
+                        <span>🎯 Active Issue Tracker (Live Synced Tickets)</span>
                     </h2>
                     <p class="text-xs text-slate-500">Live board of all tickets created & updated in Linear/Jira/Mock
                         Tracker.</p>
@@ -109,7 +99,7 @@ Charlie: Payment Gateway API benchmark can be taken up by me by tomorrow.</texta
                     <tbody id="ticketsTableBody" class="divide-y divide-slate-100">
                         <tr>
                             <td colspan="6" class="p-4 text-center text-slate-400 italic">No tickets confirmed yet.
-                                Click 'Confirm & Sync' in Section 2 above!</td>
+                                Click 'Confirm & Sync' in Confirmation Queue above!</td>
                         </tr>
                     </tbody>
                 </table>
@@ -117,7 +107,162 @@ Charlie: Payment Gateway API benchmark can be taken up by me by tomorrow.</texta
         </div>
     </div>
 
+    <!-- Custom Rename & Resolve Modal -->
+    <div id="resolveModal"
+        class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 space-y-4 border border-slate-200">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h3 class="text-base font-bold text-slate-900">Resolve Conflict & Rename Task</h3>
+                    <p id="modalTicketSubtitle" class="text-xs text-slate-500 mt-0.5">Updating ticket: <span
+                            class="font-mono font-bold text-indigo-600"></span></p>
+                </div>
+                <button onclick="closeResolveModal()"
+                    class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">&times;</button>
+            </div>
+
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">New Task Name / Title</label>
+                    <input id="modalTaskTitle" type="text"
+                        class="w-full border border-slate-300 rounded-lg p-2.5 text-sm font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none"
+                        placeholder="e.g. Azure migration task and deploy">
+                </div>
+
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Resolution Notes</label>
+                    <input id="modalResolutionNotes" type="text"
+                        class="w-full border border-slate-300 rounded-lg p-2 text-xs text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        value="Superseded by team decision">
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button onclick="closeResolveModal()"
+                    class="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 transition">Cancel</button>
+                <button id="modalSubmitBtn" onclick="submitResolveModal()"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-sm transition">
+                    Update Task
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Run Reminders Modal -->
+    <div id="remindersModal"
+        class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4 border border-slate-200">
+            <div class="flex justify-between items-start">
+                <div class="flex items-center gap-2">
+                    <span class="text-xl">🔔</span>
+                    <div>
+                        <h3 class="text-base font-bold text-slate-900">Upcoming Due Reminders</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">Tasks due within the next 48 hours</p>
+                    </div>
+                </div>
+                <button onclick="closeRemindersModal()"
+                    class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">&times;</button>
+            </div>
+
+            <div id="remindersList" class="space-y-2.5 max-h-[320px] overflow-y-auto text-xs"></div>
+
+            <div class="flex justify-end pt-2 border-t border-slate-100">
+                <button onclick="closeRemindersModal()"
+                    class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-sm transition">
+                    Dismiss
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
+        let currentResolvingConflictId = null;
+
+        function openResolveModal(conflictId, ticketId, suggestedTitle) {
+            currentResolvingConflictId = conflictId;
+            document.querySelector('#modalTicketSubtitle span').innerText = ticketId || 'Linked Ticket';
+            document.getElementById('modalTaskTitle').value = suggestedTitle || '';
+            document.getElementById('modalResolutionNotes').value = 'Superseded by team decision';
+            document.getElementById('resolveModal').classList.remove('hidden');
+            setTimeout(() => document.getElementById('modalTaskTitle').focus(), 50);
+        }
+
+        function closeResolveModal() {
+            currentResolvingConflictId = null;
+            document.getElementById('resolveModal').classList.add('hidden');
+        }
+
+        async function submitResolveModal() {
+            if (!currentResolvingConflictId) return;
+            const newTitle = document.getElementById('modalTaskTitle').value.trim();
+            const notes = document.getElementById('modalResolutionNotes').value.trim() || 'Superseded by team decision';
+
+            if (!newTitle) {
+                alert("Please enter a new task name.");
+                return;
+            }
+
+            const btn = document.getElementById('modalSubmitBtn');
+            btn.disabled = true;
+            btn.innerText = "Updating...";
+
+            await fetch(`/api/review/conflicts/${currentResolvingConflictId}/resolve?update_ticket=true`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    notes: notes,
+                    updated_title: newTitle
+                })
+            });
+
+            btn.disabled = false;
+            btn.innerText = "Update Task";
+            closeResolveModal();
+            await load();
+        }
+
+        async function discardConflict(conflictId) {
+            await fetch(`/api/review/conflicts/${conflictId}/discard`, { method: 'POST' });
+            await load();
+        }
+
+        function closeRemindersModal() {
+            document.getElementById('remindersModal').classList.add('hidden');
+        }
+
+        async function triggerReminders() {
+            const res = await fetch('/api/notifications/reminders');
+            const d = await res.json();
+            const reminders = d.dispatched_reminders || d.reminders || [];
+            const rList = document.getElementById('remindersList');
+
+            if (reminders.length === 0) {
+                rList.innerHTML = `
+                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-6 text-center text-slate-500 space-y-1">
+                        <div class="text-2xl">🎉</div>
+                        <div class="font-bold text-slate-800 text-sm">All caught up!</div>
+                        <p class="text-xs text-slate-400">No confirmed open tasks are due within the next 48 hours.</p>
+                    </div>
+                `;
+            } else {
+                rList.innerHTML = '';
+                reminders.forEach(r => {
+                    rList.innerHTML += `
+                        <div class="bg-amber-50/70 border border-amber-200 rounded-lg p-3 space-y-1">
+                            <div class="flex justify-between items-center">
+                                <span class="font-bold text-slate-900 text-xs">${r.title}</span>
+                                <span class="bg-amber-100 text-amber-800 text-[10px] font-mono px-2 py-0.5 rounded font-bold">${r.task_id}</span>
+                            </div>
+                            <div class="text-xs text-slate-600">Assignee: <span class="text-indigo-600 font-mono font-bold">@${r.owner}</span> | Due: <span class="text-amber-700 font-semibold">${r.deadline}</span></div>
+                            <div class="text-[11px] text-amber-800 mt-1">${r.message}</div>
+                        </div>
+                    `;
+                });
+            }
+
+            document.getElementById('remindersModal').classList.remove('hidden');
+        }
+
         async function ingest() {
             const btn = document.getElementById('btn');
             btn.innerText = 'Analyzing with Gemini...';
@@ -139,36 +284,61 @@ Charlie: Payment Gateway API benchmark can be taken up by me by tomorrow.</texta
             const res = await fetch('/api/review/queue');
             const data = await res.json();
 
-            // 1. Conflicts with Tracker Ticket Update capability
+            // 1. Conflicts (Dynamic Visibility with Discard Option)
             const cBox = document.getElementById('conflicts');
-            cBox.innerHTML = (!data.active_conflicts || data.active_conflicts.length === 0)
-                ? '<p class="text-slate-400 italic">No open conflicts detected.</p>'
-                : '';
-            (data.active_conflicts || []).forEach(c => {
-                const linkedTicketBadge = c.affected_tracker_task_id
-                    ? `<span class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-mono font-bold">Linked Tracker Ticket: ${c.affected_tracker_task_id}</span>`
-                    : '';
-                const updateButton = c.affected_tracker_task_id
-                    ? `<button onclick="resolveConflict(${c.conflict_id}, true)" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded text-xs font-semibold shadow">Approve & Update ${c.affected_tracker_task_id}</button>`
-                    : `<button onclick="resolveConflict(${c.conflict_id}, false)" class="bg-slate-300 hover:bg-slate-400 text-slate-800 px-2.5 py-1 rounded text-xs font-semibold">Acknowledge</button>`;
+            const cCard = document.getElementById('conflictsCard');
+            const ingestCard = document.getElementById('ingestCard');
+            const conflictsList = data.active_conflicts || [];
 
-                cBox.innerHTML += `
-                    <div class="bg-red-50 border border-red-200 p-3 rounded-md space-y-1.5">
-                        <div class="flex justify-between items-center">
-                            <span class="font-bold text-red-700">[${c.severity}] Contradiction Detected</span>
-                            ${updateButton}
-                        </div>
-                        <p class="text-xs text-red-800">${c.explanation}</p>
-                        <div class="text-[11px] text-slate-600 bg-white p-2 rounded border border-red-100">
-                            <div><b>New:</b> ${c.new_decision}</div>
-                            <div class="mt-0.5"><b>Prior Precedent:</b> ${c.previous_decision}</div>
-                            <div class="mt-1">${linkedTicketBadge}</div>
-                        </div>
-                    </div>
-                `;
-            });
+            if (conflictsList.length === 0) {
+                cCard.classList.add('hidden');
+                ingestCard.classList.remove('md:col-span-1');
+                ingestCard.classList.add('md:col-span-2');
+                cBox.innerHTML = '';
+            } else {
+                cCard.classList.remove('hidden');
+                ingestCard.classList.remove('md:col-span-2');
+                ingestCard.classList.add('md:col-span-1');
+                cBox.innerHTML = '';
 
-            // 2. Pending Queue (Supports clean titles & Task Updates)
+                conflictsList.forEach(c => {
+                    const linkedTicketBadge = c.affected_tracker_task_id
+                        ? `<span class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-mono font-bold">Linked Tracker Ticket: ${c.affected_tracker_task_id}</span>`
+                        : '';
+
+                    const safeSuggestedTitle = (c.new_decision || '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
+                    const actionButtons = c.affected_tracker_task_id
+                        ? `
+                            <div class="flex items-center gap-2">
+                                <button onclick="openResolveModal(${c.conflict_id}, '${c.affected_tracker_task_id}', '${safeSuggestedTitle}')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded text-xs font-semibold shadow">Approve & Update ${c.affected_tracker_task_id}</button>
+                                <button onclick="discardConflict(${c.conflict_id})" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-2.5 py-1 rounded text-xs font-semibold">Discard</button>
+                            </div>
+                        `
+                        : `
+                            <div class="flex items-center gap-2">
+                                <button onclick="resolveConflict(${c.conflict_id}, false)" class="bg-slate-300 hover:bg-slate-400 text-slate-800 px-2.5 py-1 rounded text-xs font-semibold">Acknowledge</button>
+                                <button onclick="discardConflict(${c.conflict_id})" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-2.5 py-1 rounded text-xs font-semibold">Discard</button>
+                            </div>
+                        `;
+
+                    cBox.innerHTML += `
+                        <div class="bg-red-50 border border-red-200 p-3 rounded-md space-y-1.5">
+                            <div class="flex justify-between items-center">
+                                <span class="font-bold text-red-700">[${c.severity}] Contradiction Detected</span>
+                                ${actionButtons}
+                            </div>
+                            <p class="text-xs text-red-800">${c.explanation}</p>
+                            <div class="text-[11px] text-slate-600 bg-white p-2 rounded border border-red-100">
+                                <div><b>New:</b> ${c.new_decision}</div>
+                                <div class="mt-0.5"><b>Prior Precedent:</b> ${c.previous_decision}</div>
+                                <div class="mt-1">${linkedTicketBadge}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            // 2. Pending Queue
             const qBox = document.getElementById('queue');
             qBox.innerHTML = (!data.pending_action_items || data.pending_action_items.length === 0)
                 ? '<p class="text-slate-400 italic">Queue is empty. No tasks pending confirmation.</p>'
@@ -217,7 +387,7 @@ Charlie: Payment Gateway API benchmark can be taken up by me by tomorrow.</texta
             badge.innerText = `${tickets.length} Ticket${tickets.length === 1 ? '' : 's'}`;
 
             if (tickets.length === 0) {
-                tBody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-400 italic">No tickets confirmed yet. Click "Confirm & Create Ticket" in Section 2 above!</td></tr>';
+                tBody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-400 italic">No tickets confirmed yet. Click "Confirm & Create Ticket" in Confirmation Queue above!</td></tr>';
             } else {
                 tBody.innerHTML = '';
                 tickets.forEach(t => {
@@ -291,18 +461,6 @@ Charlie: Payment Gateway API benchmark can be taken up by me by tomorrow.</texta
         async function reopenTicket(id) {
             await fetch(`/api/tracker/tickets/${id}/reopen`, { method: 'POST' });
             await load();
-        }
-
-        async function triggerReminders() {
-            const res = await fetch('/api/notifications/reminders');
-            const d = await res.json();
-            const reminders = d.dispatched_reminders || d.reminders || [];
-            if (reminders.length === 0) {
-                alert("🔔 Reminders Check:\n\nNo confirmed open tasks are due within 48 hours.\n(Make sure to click 'Confirm & Create Ticket' on a task first!)");
-            } else {
-                const list = reminders.map(r => `• ${r.message}`).join("\n\n");
-                alert(`🔔 Reminders Dispatched (${reminders.length} task(s) due soon!):\n\n` + list);
-            }
         }
 
         load();

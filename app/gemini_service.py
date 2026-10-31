@@ -10,13 +10,11 @@ class GeminiService:
         self._sdk_type = None
 
         if self.api_key:
-            # Try official google-genai SDK first
             try:
                 from google import genai
                 self.client = genai.Client(api_key=self.api_key)
                 self._sdk_type = "google-genai"
             except ImportError:
-                # Fallback to google-generativeai
                 try:
                     import google.generativeai as legacy_genai
                     legacy_genai.configure(api_key=self.api_key)
@@ -33,7 +31,6 @@ class GeminiService:
         if not self.is_configured():
             return None
 
-        # 1. New Google GenAI SDK
         if self._sdk_type == "google-genai":
             try:
                 from google.genai import types
@@ -49,7 +46,6 @@ class GeminiService:
             except Exception as e:
                 print(f"[Gemini Error]: {e}")
 
-        # 2. Legacy google-generativeai SDK
         elif self._sdk_type == "legacy":
             try:
                 model = self.legacy_genai.GenerativeModel(
@@ -61,6 +57,48 @@ class GeminiService:
             except Exception as e:
                 print(f"[Gemini Legacy Error]: {e}")
 
+        return None
+
+    def generate_text(self, prompt: str) -> Optional[str]:
+        """Calls Gemini and returns clean plain text output."""
+        if not self.is_configured():
+            return None
+
+        if self._sdk_type == "google-genai":
+            try:
+                response = self.client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=prompt,
+                )
+                return response.text.strip() if response and response.text else None
+            except Exception as e:
+                print(f"[Gemini Text Error]: {e}")
+
+        elif self._sdk_type == "legacy":
+            try:
+                model = self.legacy_genai.GenerativeModel("gemini-1.5-flash")
+                response = model.generate_content(prompt)
+                return response.text.strip() if response and response.text else None
+            except Exception as e:
+                print(f"[Gemini Legacy Text Error]: {e}")
+
+        return None
+
+    def generate_task_title(self, statement: str) -> Optional[str]:
+        """Directs LLM to synthesize a canonical 3-6 word task title from spoken content."""
+        prompt = f"""You are an elite project operations AI.
+Convert this conversational statement from a meeting into a concise, professional, 3 to 6 word imperative task title starting with an action verb (e.g., Set up, Migrate, Benchmark, Review, Update, Deploy).
+
+Statement: "{statement}"
+
+Rules:
+- Output ONLY the task title text.
+- Do NOT include quotes, markdown, bullet points, or punctuation.
+- Never repeat full conversational dialogue or speaker names."""
+        
+        raw = self.generate_text(prompt)
+        if raw:
+            return raw.strip(" .\"'\n\r*`")
         return None
 
     def get_embedding(self, text: str) -> Optional[List[float]]:
