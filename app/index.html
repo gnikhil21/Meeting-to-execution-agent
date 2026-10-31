@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>Meeting-to-Execution Agent (v3.0 Conflict Sync & Task Updates)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-slate-50 p-8 font-sans">
+    <div class="max-w-6xl mx-auto space-y-6">
+        <!-- Header -->
+        <div class="flex justify-between items-center border-b pb-4">
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-3xl font-extrabold text-indigo-700">Meeting-to-Execution Agent</h1>
+                    <span
+                        class="bg-indigo-100 text-indigo-800 text-xs px-2.5 py-0.5 rounded font-bold uppercase tracking-wide">v3.0
+                        Conflict Tracker Sync</span>
+                </div>
+                <p class="text-sm text-slate-500 mt-1">Cross-meeting memory, conflict sync & task update intelligence
+                    with <b>Google Gemini</b></p>
+            </div>
+            <div class="space-x-2">
+                <button onclick="triggerReminders()"
+                    class="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-md text-sm font-semibold shadow">🔔
+                    Run Reminders</button>
+                <a href="/digest" target="_blank"
+                    class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-md text-sm font-semibold shadow inline-block">📊
+                    Weekly Digest</a>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- 1. Transcript Ingest -->
+            <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+                <div class="flex justify-between items-center mb-2">
+                    <h2 class="font-bold text-slate-800 text-base">1. Ingest Meeting Transcript</h2>
+                    <span class="text-[11px] text-indigo-600 font-medium">Clean Headers • Anti-Duplicate</span>
+                </div>
+                <input id="title" class="w-full border p-2 rounded mb-2 text-sm font-medium"
+                    value="Sprint Architecture Alignment">
+                <textarea id="text" rows="8" class="w-full border p-2 rounded text-xs font-mono">Alice: We previously decided to use PostgreSQL for our customer DB.
+Bob: Actually, today we decided to switch from PostgreSQL to MongoDB.
+Alice: Sounds good.
+Bob: I would be doing database schema migration to Mongo by tomorrow.
+Charlie: Payment Gateway API benchmark can be taken up by me by tomorrow.</textarea>
+                <button onclick="ingest()" id="btn"
+                    class="mt-2 w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded font-semibold text-sm transition shadow-sm">
+                    Analyze with Gemini
+                </button>
+            </div>
+
+            <!-- 2. Conflicts Box -->
+            <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+                <h2 class="font-bold text-red-600 mb-2 flex items-center gap-1.5 text-base">
+                    <span>⚠️ Cross-Meeting Memory Conflicts</span>
+                </h2>
+                <div id="conflicts" class="space-y-2.5 text-xs overflow-y-auto max-h-[230px]">
+                    <p class="text-slate-400 italic">No open conflicts detected.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. Staging Confirmation Queue -->
+        <div class="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+            <div class="flex justify-between items-center mb-3">
+                <div>
+                    <h2 class="font-bold text-slate-800 text-base">2. Confirmation Queue (Human-in-the-Loop)</h2>
+                    <p class="text-xs text-slate-500">Notice clean task headers. Re-assignments or rescheduled dates
+                        stage as <b>Updates</b> to existing tickets.</p>
+                </div>
+                <button onclick="load()" class="text-indigo-600 hover:underline text-xs font-semibold">↻
+                    Refresh</button>
+            </div>
+            <div id="queue" class="space-y-2 text-sm">
+                <p class="text-slate-400 italic">Queue is empty.</p>
+            </div>
+        </div>
+
+        <!-- 4. Active Issue Tracker -->
+        <div class="bg-white p-5 rounded-lg shadow-sm border-2 border-emerald-500">
+            <div class="flex justify-between items-center mb-3">
+                <div>
+                    <h2 class="font-bold text-emerald-800 text-base flex items-center gap-1.5">
+                        <span>🎯 3. Active Issue Tracker (Live Synced Tickets)</span>
+                    </h2>
+                    <p class="text-xs text-slate-500">Live board of all tickets created & updated in Linear/Jira/Mock
+                        Tracker.</p>
+                </div>
+                <span id="ticketCountBadge"
+                    class="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-0.5 rounded-full font-bold">0
+                    Tickets</span>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-emerald-50 text-emerald-900 uppercase text-[10px] font-bold">
+                        <tr>
+                            <th class="p-3">Ticket ID</th>
+                            <th class="p-3">Clean Task Header</th>
+                            <th class="p-3">Assignee</th>
+                            <th class="p-3">Deadline</th>
+                            <th class="p-3">Status</th>
+                            <th class="p-3 text-right">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ticketsTableBody" class="divide-y divide-slate-100">
+                        <tr>
+                            <td colspan="6" class="p-4 text-center text-slate-400 italic">No tickets confirmed yet.
+                                Click 'Confirm & Sync' in Section 2 above!</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function ingest() {
+            const btn = document.getElementById('btn');
+            btn.innerText = 'Analyzing with Gemini...';
+            btn.disabled = true;
+            await fetch('/api/meetings/ingest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: document.getElementById('title').value,
+                    transcript_text: document.getElementById('text').value
+                })
+            });
+            btn.innerText = 'Analyze with Gemini';
+            btn.disabled = false;
+            load();
+        }
+
+        async function load() {
+            const res = await fetch('/api/review/queue');
+            const data = await res.json();
+
+            // 1. Conflicts with Tracker Ticket Update capability
+            const cBox = document.getElementById('conflicts');
+            cBox.innerHTML = (!data.active_conflicts || data.active_conflicts.length === 0)
+                ? '<p class="text-slate-400 italic">No open conflicts detected.</p>'
+                : '';
+            (data.active_conflicts || []).forEach(c => {
+                const linkedTicketBadge = c.affected_tracker_task_id
+                    ? `<span class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-mono font-bold">Linked Tracker Ticket: ${c.affected_tracker_task_id}</span>`
+                    : '';
+                const updateButton = c.affected_tracker_task_id
+                    ? `<button onclick="resolveConflict(${c.conflict_id}, true)" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded text-xs font-semibold shadow">Approve & Update ${c.affected_tracker_task_id}</button>`
+                    : `<button onclick="resolveConflict(${c.conflict_id}, false)" class="bg-slate-300 hover:bg-slate-400 text-slate-800 px-2.5 py-1 rounded text-xs font-semibold">Acknowledge</button>`;
+
+                cBox.innerHTML += `
+                    <div class="bg-red-50 border border-red-200 p-3 rounded-md space-y-1.5">
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold text-red-700">[${c.severity}] Contradiction Detected</span>
+                            ${updateButton}
+                        </div>
+                        <p class="text-xs text-red-800">${c.explanation}</p>
+                        <div class="text-[11px] text-slate-600 bg-white p-2 rounded border border-red-100">
+                            <div><b>New:</b> ${c.new_decision}</div>
+                            <div class="mt-0.5"><b>Prior Precedent:</b> ${c.previous_decision}</div>
+                            <div class="mt-1">${linkedTicketBadge}</div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            // 2. Pending Queue (Supports clean titles & Task Updates)
+            const qBox = document.getElementById('queue');
+            qBox.innerHTML = (!data.pending_action_items || data.pending_action_items.length === 0)
+                ? '<p class="text-slate-400 italic">Queue is empty. No tasks pending confirmation.</p>'
+                : '';
+            (data.pending_action_items || []).forEach(a => {
+                let cardClass = "border border-slate-200 bg-white hover:bg-slate-50";
+                let badge = `<span class="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded font-bold uppercase">New Task</span>`;
+                let btnText = "Confirm & Create Ticket";
+                let diffInfo = "";
+
+                if (a.is_update) {
+                    cardClass = "border-2 border-amber-400 bg-amber-50/50 hover:bg-amber-50";
+                    badge = `<span class="bg-amber-200 text-amber-900 text-[10px] px-2 py-0.5 rounded font-bold uppercase">Update to ${a.target_ticket_id}</span>`;
+                    btnText = `Confirm & Update ${a.target_ticket_id}`;
+                    if (a.old_values) {
+                        diffInfo = `
+                            <div class="mt-1 text-xs text-amber-800 font-medium">
+                                <b>Changes:</b> Assignee: <span class="line-through">${a.old_values.old_owner}</span> ➔ <b>${a.owner}</b> | Deadline: <span class="line-through">${a.old_values.old_deadline}</span> ➔ <b>${a.deadline}</b>
+                            </div>
+                        `;
+                    }
+                }
+
+                qBox.innerHTML += `
+                    <div class="flex justify-between items-center ${cardClass} p-3 rounded-md transition shadow-sm">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-slate-900 text-sm">${a.title}</span>
+                                ${badge}
+                            </div>
+                            <div class="text-xs text-slate-500 mt-0.5">Assignee: <span class="text-indigo-600 font-mono font-medium">@${a.owner}</span> | Due: <span class="text-amber-700 font-medium">${a.deadline}</span></div>
+                            ${diffInfo}
+                        </div>
+                        <div class="space-x-2 flex-shrink-0">
+                            <button id="btn-sync-${a.id}" onclick="approve(${a.id})" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded text-xs font-semibold shadow">${btnText}</button>
+                            <button onclick="reject(${a.id})" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded text-xs font-semibold">Discard</button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            // 3. Active Tracker Live Board
+            const tBody = document.getElementById('ticketsTableBody');
+            const badge = document.getElementById('ticketCountBadge');
+            const tickets = data.approved_tickets || [];
+            badge.innerText = `${tickets.length} Ticket${tickets.length === 1 ? '' : 's'}`;
+
+            if (tickets.length === 0) {
+                tBody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-400 italic">No tickets confirmed yet. Click "Confirm & Create Ticket" in Section 2 above!</td></tr>';
+            } else {
+                tBody.innerHTML = '';
+                tickets.forEach(t => {
+                    const isClosed = (t.status === "CLOSED");
+                    const statusBadge = isClosed
+                        ? `<span class="bg-slate-200 text-slate-700 px-2.5 py-1 rounded text-[11px] font-bold tracking-wide">CLOSED</span>`
+                        : `<span class="bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded text-[11px] font-bold tracking-wide">${t.status}</span>`;
+
+                    const actionBtn = isClosed
+                        ? `<button onclick="reopenTicket('${t.id}')" class="text-xs text-indigo-600 hover:underline font-semibold">Reopen</button>`
+                        : `<button onclick="closeTicket('${t.id}')" class="bg-slate-700 hover:bg-slate-800 text-white px-3 py-1 rounded text-xs font-semibold shadow transition">Close Ticket</button>`;
+
+                    const textClass = isClosed ? "line-through text-slate-400" : "text-slate-800 font-medium";
+
+                    tBody.innerHTML += `
+                        <tr class="hover:bg-slate-50">
+                            <td class="p-3 font-mono text-indigo-700 font-bold">${t.tracker_task_id}</td>
+                            <td class="p-3 ${textClass}">${t.title}</td>
+                            <td class="p-3 text-slate-600 font-mono">@${t.owner}</td>
+                            <td class="p-3 text-slate-600">${t.deadline}</td>
+                            <td class="p-3">${statusBadge}</td>
+                            <td class="p-3 text-right">${actionBtn}</td>
+                        </tr>
+                    `;
+                });
+            }
+        }
+
+        async function approve(id) {
+            const btn = document.getElementById(`btn-sync-${id}`);
+            if (btn) {
+                btn.disabled = true;
+                btn.innerText = "Syncing...";
+                btn.className = "bg-slate-400 text-white px-3 py-1.5 rounded text-xs font-semibold cursor-not-allowed";
+            }
+            await fetch('/api/review/action-items/' + id, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ review_status: 'APPROVED' })
+            });
+            await load();
+        }
+
+        async function reject(id) {
+            await fetch('/api/review/action-items/' + id, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ review_status: 'REJECTED' })
+            });
+            await load();
+        }
+
+        async function resolveConflict(conflictId, updateTicket) {
+            const note = prompt("Enter resolution notes:", "Superseded by team decision");
+            if (note) {
+                await fetch(`/api/review/conflicts/${conflictId}/resolve?update_ticket=${updateTicket}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notes: note })
+                });
+                await load();
+            }
+        }
+
+        async function closeTicket(id) {
+            if (!confirm("Are you sure you want to close this ticket?")) return;
+            await fetch(`/api/tracker/tickets/${id}/close`, { method: 'POST' });
+            await load();
+        }
+
+        async function reopenTicket(id) {
+            await fetch(`/api/tracker/tickets/${id}/reopen`, { method: 'POST' });
+            await load();
+        }
+
+        async function triggerReminders() {
+            const res = await fetch('/api/notifications/reminders');
+            const d = await res.json();
+            const reminders = d.dispatched_reminders || d.reminders || [];
+            if (reminders.length === 0) {
+                alert("🔔 Reminders Check:\n\nNo confirmed open tasks are due within 48 hours.\n(Make sure to click 'Confirm & Create Ticket' on a task first!)");
+            } else {
+                const list = reminders.map(r => `• ${r.message}`).join("\n\n");
+                alert(`🔔 Reminders Dispatched (${reminders.length} task(s) due soon!):\n\n` + list);
+            }
+        }
+
+        load();
+    </script>
+</body>
+
+</html>
