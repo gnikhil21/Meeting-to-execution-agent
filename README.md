@@ -1,4 +1,4 @@
-# 🎙️ [Meeting-to-Execution Agent](https://meeting-to-execution-agent.onrender.com/)
+## 🎙️ [Meeting-to-Execution Agent](https://meeting-to-execution-agent.onrender.com/)
 
 An AI-powered organizational memory and execution engine that transforms spoken meeting transcripts into synchronized, tracked tickets (Linear/Jira/Mock Tracker), while automatically detecting and resolving cross-meeting contradictions using **semantic vector search** and **Google Gemini**.
 
@@ -59,10 +59,10 @@ The **Meeting-to-Execution Agent** acts as an autonomous project governance laye
 ## 🏗️ Architecture & Data Flow
 
 The agent employs a **hybrid storage architecture** combining transactional relational storage with dense vector search:
-
-┌────────────────────────────────────────┐
+```
+              ┌────────────────────────────────────────┐
               │       Meeting Transcript Ingest        │
-              │   ("Bob: we need to change AWS...")   │
+              │   ("Bob: we need to change AWS...")    │
               └──────────────────┬─────────────────────┘
                                  │
                                  ▼
@@ -96,25 +96,25 @@ The agent employs a **hybrid storage architecture** combining transactional rela
                          └──────────────►│  (Synced Issue Board)    │
                                          └──────────────────────────┘
 
-
-### 🚀 Quickstart Guide
-## 1. Prerequisites
+```
+## 🚀 Quickstart Guide
+### 1. Prerequisites
  - Python 3.10+
  - Google Gemini API Key
 
-## 2. Clone & Setup Virtual Environment
+### 2. Clone & Setup Virtual Environment
 git clone https://github.com/your-username/meeting-execution-agent.git
 cd meeting-execution-agent
 
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-## 3. Install Dependencies
+### 3. Install Dependencies
 pip install -r requirements.txt
 
-## 4. Configure Environment Variables
+### 4. Configure Environment Variables
 Create a .env file or export your keys:
 export GEMINI_API_KEY="your-gemini-api-key"
 
-## 5. Run the Application
+### 5. Run the Application
 uvicorn app.main:app --reload --port 8000
